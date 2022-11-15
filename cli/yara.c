@@ -967,7 +967,6 @@ static int handle_message(
       yr_rule_strings_foreach(rule, string)
       {
         YR_MATCH* match;
-        rule.
         
         if (show_rules)
         {
