@@ -136,6 +136,7 @@ static bool scan_list_search = false;
 static bool show_module_data = false;
 static bool show_tags = false;
 static bool show_stats = false;
+static bool show_rules = false;
 static bool show_strings = false;
 static bool show_string_length = false;
 static bool show_meta = false;
@@ -248,6 +249,9 @@ args_option_t options[] = {
     OPT_BOOLEAN('S', "print-stats", &show_stats, "print rules' statistics"),
 
     OPT_BOOLEAN('s', "print-strings", &show_strings, "print matching strings"),
+
+
+    OPT_BOOLEAN('A', "print-rules", &show_rules, "print all rules strings"),
 
     OPT_BOOLEAN(
         'L',
@@ -903,45 +907,42 @@ static int handle_message(
 
   bool is_matching = (message == CALLBACK_MSG_RULE_MATCHING);
 
-  show = show && ((!negate && is_matching) || (negate && !is_matching));
+  show = show && ((!negate && is_matching) || (negate && !is_matching)) || show_rules;
 
   if (show && !print_count_only)
   {
     cli_mutex_lock(&output_mutex);
 
-    if (show_namespace)
+    if (!show_rules && show_namespace)
       printf("%s:", rule->ns->name);
 
-    printf("%s ", rule->identifier);
+    printf("%s \n{\n", rule->identifier);
 
-    if (show_tags)
+    if (!show_rules && show_tags)
     {
-      printf("[");
-
       yr_rule_tags_foreach(rule, tag)
       {
         // print a comma except for the first tag
         if (tag != rule->tags)
-          printf(",");
+          printf("\n");
 
         printf("%s", tag);
       }
 
-      printf("] ");
+      printf("\n");
     }
 
     // Show meta-data.
 
-    if (show_meta)
+    if (show_rules || show_meta)
     {
       YR_META* meta;
 
-      printf("[");
 
       yr_rule_metas_foreach(rule, meta)
       {
         if (meta != rule->metas)
-          printf(",");
+          printf("\n");
 
         if (meta->type == META_TYPE_INTEGER)
         {
@@ -955,54 +956,64 @@ static int handle_message(
         {
           printf("%s=\"", meta->identifier);
           print_escaped((uint8_t*) (meta->string), strlen(meta->string));
-          putchar('"');
         }
       }
-
-      printf("] ");
     }
 
-    printf("%s\n", ((CALLBACK_ARGS*) data)->file_path);
-
-    // Show matched strings.
-
-    if (show_strings || show_string_length)
+    if (show_rules || show_strings || show_string_length)
     {
       YR_STRING* string;
-
+      printf("\nstrings:\n");
       yr_rule_strings_foreach(rule, string)
       {
         YR_MATCH* match;
-
-        yr_string_matches_foreach(context, string, match)
+        rule.
+        
+        if (show_rules)
         {
-          if (show_string_length)
-            printf(
-                "0x%" PRIx64 ":%d:%s",
-                match->base + match->offset,
-                match->data_length,
-                string->identifier);
-          else
-            printf(
-                "0x%" PRIx64 ":%s",
-                match->base + match->offset,
-                string->identifier);
-
-          if (show_strings)
+          if (STRING_IS_HEX(string))
           {
-            printf(": ");
+            printf("	%s= {", string->identifier);
+            for (int i = 0; i < string->length; i++)
+              printf("%s%02X", (i == 0 ? "" : " "), string->string[i]);
 
-            if (STRING_IS_HEX(string))
-              print_hex_string(match->data, match->data_length);
-            else
-              print_string(match->data, match->data_length);
+            printf("}\n");
           }
           else
+            printf("\t%s=\"%s\"\n", string->identifier, string->string, string->identifier);
+        } else {
+          yr_string_matches_foreach(context, string, match)
           {
-            printf("\n");
+            if (show_string_length)
+              printf(
+                  "0x%" PRIx64 ":%d:%s",
+                  match->base + match->offset,
+                  match->data_length,
+                  string->identifier);
+            else
+              printf(
+                  "0x%" PRIx64 ":%s",
+                  match->base + match->offset,
+                  string->identifier);
+
+            if (show_strings)
+            {
+              printf(": ");
+
+              if (STRING_IS_HEX(string))
+                print_hex_string(match->data, match->data_length);
+              else
+                print_string(match->data, match->data_length);
+            }
+            else
+            {
+              printf("\n");
+            }
           }
         }
+
       }
+      printf("}\n");
     }
 
     cli_mutex_unlock(&output_mutex);
